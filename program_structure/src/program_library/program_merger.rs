@@ -132,7 +132,7 @@ impl Merger {
     }
 
 
-    pub fn decompose(self) -> (usize, FunctionInfo, TemplateInfo) {
-        (self.fresh_id, self.function_info, self.template_info)
+    pub fn decompose(self) -> (usize, FunctionInfo, TemplateInfo, BusInfo) {
+        (self.fresh_id, self.function_info, self.template_info, self.bus_info)
     }
 }
