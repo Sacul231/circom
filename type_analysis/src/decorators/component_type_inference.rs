@@ -69,7 +69,7 @@ fn into_template_inference(expr: &Expression, templates: &TemplateInfo) -> Optio
             }
             ret
         }
-        Call { id, .. } if templates.contains_key(id) => Some(id.clone()),
+        Call { id, .. } | AnonymousComp {id , ..} if templates.contains_key(id) => Some(id.clone()),
         ParallelOp {rhe, ..} =>{
             into_template_inference(rhe, templates)
         },
