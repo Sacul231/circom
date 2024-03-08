@@ -205,7 +205,7 @@ fn analyse_expression(
 
 
         }
-        BusCall { meta, id, .. } => {
+        BusCall { meta, .. } => {
             let mut report = Report::error(
                 "Template elements declared inside the function".to_string(),
                 ReportCode::UndefinedFunction,
@@ -215,7 +215,7 @@ fn analyse_expression(
             report.add_primary(location, file_id, "Declaring template element".to_string());
             reports.push(report);
         },
-        AnonymousComp { meta,.. } => {
+        AnonymousComp { meta, .. } => {
             let mut report = Report::error(
                 format!("Unknown call in function"),
                 ReportCode::UndefinedFunction,
