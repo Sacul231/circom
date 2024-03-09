@@ -81,8 +81,17 @@ fn reduce_types_in_expression(expression: &mut Expression, environment: &Environ
             reduce_types_in_expression(value, environment);
             reduce_types_in_expression(dimension, environment);
         }
-        Number(..) => {}
-        _ => {unreachable!("Anonymous calls should not be reachable at this point."); }
+        Number(..) => {}        
+        AnonymousComp { params, signals, .. } => {
+            reduce_types_in_vec_of_expressions(params, environment);
+            reduce_types_in_vec_of_expressions(signals, environment);
+        },
+        Tuple { values, .. } => {
+            reduce_types_in_vec_of_expressions(values, environment);
+        },
+        BusCall { args, .. } => {
+            reduce_types_in_vec_of_expressions(args, environment);
+        },
     }
 }
 

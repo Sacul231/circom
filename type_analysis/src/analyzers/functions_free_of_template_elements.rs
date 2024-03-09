@@ -205,6 +205,30 @@ fn analyse_expression(
 
 
         }
-        _ => {unreachable!("Anonymous calls should not be reachable at this point."); }
-    }
+        BusCall { meta, .. } => {
+            let mut report = Report::error(
+                "Template elements declared inside the function".to_string(),
+                ReportCode::UndefinedFunction,
+            );
+            let location =
+                file_definition::generate_file_location(meta.get_start(), meta.get_end());
+            report.add_primary(location, file_id, "Declaring template element".to_string());
+            reports.push(report);
+        },
+        AnonymousComp { meta, .. } => {
+            let mut report = Report::error(
+                format!("Unknown call in function"),
+                ReportCode::UndefinedFunction,
+            );
+            let location =
+                file_definition::generate_file_location(meta.get_start(), meta.get_end());
+            report.add_primary(location, file_id.clone(), format!("Is not a function call"));
+            reports.push(report);
+        },
+        Tuple { values, .. } => {
+            for value in values.iter() {
+                analyse_expression(value, function_names, reports);
+            }
+        },
+     }
 }

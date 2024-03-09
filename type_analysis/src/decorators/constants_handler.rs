@@ -224,7 +224,13 @@ fn has_constant_value(expr: &Expression, environment: &Constants) -> bool {
         Variable { name, .. } => variable(name, environment),
         ArrayInLine { .. } => array_inline(),
         UniformArray { .. } => uniform_array(),
-        _ => {unreachable!("Anonymous calls should not be reachable at this point."); }
+        AnonymousComp { params, signals, .. } => {
+            call(params, environment) && call(signals, environment)
+        },
+        Tuple { values, .. } => {
+            call(values,environment) //It iterates over values to see if there is a constant value.
+        },
+        BusCall { args, .. } => call(args, environment),
     }
 }
 
@@ -415,8 +421,37 @@ fn expand_expression(expr: Expression, environment: &ExpressionHolder) -> Expres
             expand_inline_switch_op(meta, *cond, *if_true, *if_false, environment)
         }
         Variable { meta, name, access } => expand_variable(meta, name, access, environment),
-        _ => {unreachable!("Anonymous calls should not be reachable at this point."); }
+        AnonymousComp { meta, id, is_parallel, params, signals, names } => 
+            expand_anonymous_component(id, meta, is_parallel, params, signals, names, environment),
+        Tuple { meta, values } => expand_array(meta, values, environment),
+        BusCall { meta, id, args } => expand_bus_call(meta,id,args,environment),
     }
+}
+
+fn expand_bus_call(meta: Meta, id: String, old_args: Vec<Expression>, environment: &ExpressionHolder,) -> Expression {
+    let mut args = Vec::new();
+    for expr in old_args {
+        let new_expression = expand_expression(expr, environment);
+        args.push(new_expression);
+    }
+    build_bus_call(meta, id, args)
+}
+
+
+fn expand_anonymous_component(id: String, meta: Meta, is_parallel: bool, old_params: Vec<Expression>, 
+                              old_signals: Vec<Expression>, names: Option<Vec<(AssignOp, String)>>, 
+                              environment: &ExpressionHolder) -> Expression {
+    let mut params = Vec::new();
+    for expr in old_params {
+        let new_expression = expand_expression(expr, environment);
+        params.push(new_expression);
+    }
+    let mut signals = Vec::new();
+    for expr in old_signals {
+        let new_expression = expand_expression(expr, environment);
+        signals.push(new_expression);
+    }
+    build_anonymous_component(meta, id, params, signals, names, is_parallel)
 }
 
 fn expand_number(meta: Meta, value: BigInt) -> Expression {

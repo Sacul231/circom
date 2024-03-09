@@ -414,6 +414,82 @@ fn analyze_expression(
                 environment,
             );
         },
-        _ => {}
+        Expression::BusCall { args, .. } | Expression::Tuple { values : args, .. } => 
+        {
+            for arg in args.iter() {
+                analyze_expression(
+                    arg,
+                    file_id,
+                    function_info,
+                    template_info,
+                    reports,
+                    environment,
+                );
+            }
+        },
+        Expression::Number(_, _) => {},
+        Expression::AnonymousComp { meta, id, is_parallel, params, signals, names } => {
+            if !template_info.contains_key(id) {
+                let mut report =
+                    Report::error(format!("Calling symbol"), ReportCode::NonExistentSymbol);
+                report.add_primary(
+                    file_definition::generate_file_location(meta.get_start(), meta.get_end()),
+                    file_id.clone(),
+                    format!("Calling unknown symbol"),
+                );
+                reports.push(report);
+                return;
+            }
+            let expected_num_of_params = template_info.get(id).unwrap().get_num_of_params();
+            let expected_num_of_signals = template_info.get(id).unwrap().get_inputs().len();
+
+            if params.len() != expected_num_of_params {
+                let mut report = Report::error(
+                    format!("Calling template with wrong number of arguments"),
+                    ReportCode::FunctionWrongNumberOfArguments,
+                );
+                report.add_primary(
+                    file_definition::generate_file_location(meta.get_start(), meta.get_end()),
+                    file_id.clone(),
+                    format!("Got {} params, {} where expected", params.len(), expected_num_of_params),
+                );
+                reports.push(report);
+                return;
+            }
+            for arg in params.iter() {
+                analyze_expression(
+                    arg,
+                    file_id,
+                    function_info,
+                    template_info,
+                    reports,
+                    environment,
+                );
+            }
+            for arg in signals.iter() {
+                analyze_expression(
+                    arg,
+                    file_id,
+                    function_info,
+                    template_info,
+                    reports,
+                    environment,
+                );
+            }
+            let num_m = if let Some(m) = names { m.len() } else {signals.len()};
+            if signals.len() != expected_num_of_signals || num_m != signals.len() {
+                let mut report = Report::error(
+                        format!("Calling template with wrong number of signals"),
+                        ReportCode::FunctionWrongNumberOfArguments,
+                );
+                report.add_primary(
+                        file_definition::generate_file_location(meta.get_start(), meta.get_end()),
+                        file_id.clone(),
+                        format!("Got {} params, {} where expected", signals.len(), expected_num_of_signals),
+                );
+                reports.push(report);
+                return;
+            }         
+        },  
     }
 }
