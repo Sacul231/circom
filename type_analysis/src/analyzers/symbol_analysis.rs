@@ -164,7 +164,20 @@ fn analyze_statement(
     environment: &mut Environment,
 ) {
     match stmt {
-        Statement::MultSubstitution { .. } => unreachable!(),
+        Statement::MultSubstitution {  lhe, rhe, ..  } => {
+            if let Expression::Tuple { values, .. } = lhe {
+                for val in values { //We allow underscores on the left side.
+                    if let Expression::Variable { name , ..}  = val {
+                        if name != "_" { 
+                            analyze_expression(val, file_id, function_info, template_info, reports, environment); 
+                        }
+                    }
+                }
+            } else {
+                analyze_expression(lhe, file_id, function_info, template_info, reports, environment);
+            }
+            analyze_expression(rhe, file_id, function_info, template_info, reports, environment)       
+        },
         Statement::Return { value, .. } => {
             analyze_expression(value, file_id, function_info, template_info, reports, environment)
         }
@@ -279,6 +292,7 @@ fn treat_variable(
     reports: &mut ReportCollection,
     environment: &Environment,
 ) {
+    if name == "_" { return; }
     if !symbol_in_environment(environment, name) {
         let mut report = Report::error(format!("Undeclared symbol"), ReportCode::NonExistentSymbol);
         report.add_primary(
@@ -333,16 +347,30 @@ fn analyze_expression(
                 environment,
             );
         }
-        Expression::Variable { meta, name, access, .. } => treat_variable(
-            meta,
-            name,
-            access,
-            file_id,
-            function_info,
-            template_info,
-            reports,
-            environment,
-        ),
+        Expression::Variable { meta, name, access, .. } => {
+            //First, we look for underscores
+            let mut found = false;
+            if name == "_" {
+                found = true;
+            }
+            for a in access {
+                match a {
+                    Access::ComponentAccess(id) => if id == "_" {found = true;},
+                    Access::ArrayAccess(i) => look_for_underscores(i, file_id, function_info, template_info, reports, environment),
+                }
+            }
+            if found {
+                let mut report =
+                    Report::error(format!("Underscore"), ReportCode::InvalidUnderscore);
+                report.add_primary(
+                    file_definition::generate_file_location(meta.get_start(), meta.get_end()),
+                    file_id.clone(),
+                    format!("This underscore cannot be used here."),
+                );
+                reports.push(report);
+            }
+            treat_variable(meta,name, access,file_id,function_info, template_info,reports,environment); 
+        },
         Expression::Call { meta, id, args, .. } => {
             if !function_info.contains_key(id) && !template_info.contains_key(id) {
                 let mut report =
@@ -428,7 +456,7 @@ fn analyze_expression(
             }
         },
         Expression::Number(_, _) => {},
-        Expression::AnonymousComp { meta, id, is_parallel, params, signals, names } => {
+        Expression::AnonymousComp { meta, id, params, signals, names, .. } => {
             if !template_info.contains_key(id) {
                 let mut report =
                     Report::error(format!("Calling symbol"), ReportCode::NonExistentSymbol);
@@ -491,5 +519,71 @@ fn analyze_expression(
                 return;
             }         
         },  
+    }
+   }
+
+
+fn look_for_underscores(
+    expression: &Expression,
+    file_id: FileID,
+    function_info: &FunctionInfo,
+    template_info: &TemplateInfo,
+    reports: &mut ReportCollection,
+    environment: &Environment,
+) {
+    match expression {
+        Expression::InfixOp { lhe, rhe, .. }
+        | Expression::UniformArray { value: lhe, dimension: rhe, .. }
+        => {
+            look_for_underscores(lhe, file_id, function_info, template_info, reports, environment);
+            look_for_underscores(rhe, file_id, function_info, template_info, reports, environment);
+        },
+        Expression::PrefixOp { rhe, .. } 
+        | Expression::ParallelOp { rhe , ..}  => {
+            look_for_underscores(rhe, file_id, function_info, template_info, reports, environment);
+        },
+        Expression::InlineSwitchOp { cond, if_true, if_false, .. } => {
+            look_for_underscores(cond, file_id, function_info, template_info, reports, environment);
+            look_for_underscores(if_true, file_id, function_info, template_info, reports, environment);
+            look_for_underscores(if_false, file_id, function_info, template_info, reports, environment);
+        },
+        Expression::Variable { meta, name, access } => {
+            let mut found = false;
+            if name == "_" {
+                found = true;
+            }
+            for a in access {
+                match a {
+                    Access::ComponentAccess(id) => if id == "_" {found = true;},
+                    Access::ArrayAccess(i) => look_for_underscores(i, file_id, function_info, template_info, reports, environment),
+                }
+            }
+            if found {
+                let mut report =
+                    Report::error(format!("Calling symbol"), ReportCode::NonExistentSymbol);
+                report.add_primary(
+                    file_definition::generate_file_location(meta.get_start(), meta.get_end()),
+                    file_id.clone(),
+                    format!("Calling unknown symbol"),
+                );
+                reports.push(report);
+            }
+        },
+        Expression::Number(_, _) => {},
+        Expression::AnonymousComp { params, signals, .. } => {
+            for v in params {
+                look_for_underscores(v, file_id, function_info, template_info, reports, environment);
+            }
+            for v in signals {
+                look_for_underscores(v, file_id, function_info, template_info, reports, environment);
+            }
+        },
+        Expression::ArrayInLine { values, .. } | Expression::Tuple {  values, .. }
+        | Expression::Call {  args: values , .. } 
+        | Expression::BusCall {  args: values, .. } => {
+            for v in values {
+                look_for_underscores(v, file_id, function_info, template_info, reports, environment);
+            }
+        },
     }
 }

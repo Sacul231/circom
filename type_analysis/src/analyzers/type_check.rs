@@ -23,19 +23,34 @@ struct AnalysisInformation {
     return_type: Option<ArithmeticType>,
 }
 
+#[derive(PartialEq, Clone)]
+enum TupleKind{
+    TUPLE,
+    ANONYMOUSCOMP,
+    _BUS
+}
+
+#[derive(Clone)]
 struct FoldedType {
     arithmetic: Option<ArithmeticType>,
     template: Option<String>,
+    tuple: Option<(TupleKind,Vec<FoldedType>)>,
 }
 impl FoldedType {
     pub fn arithmetic_type(dimensions: ArithmeticType) -> FoldedType {
-        FoldedType { arithmetic: Option::Some(dimensions), template: Option::None }
+        FoldedType { arithmetic: Option::Some(dimensions), template: Option::None, tuple : Option::None }
     }
     pub fn template(name: &str) -> FoldedType {
-        FoldedType { template: Option::Some(name.to_string()), arithmetic: Option::None }
+        FoldedType { template: Option::Some(name.to_string()), arithmetic: Option::None, tuple : Option::None }
+    }
+    pub fn tuple(kind: TupleKind, v : Vec<FoldedType>) -> FoldedType {
+        FoldedType { tuple: Option::Some((kind,v)), arithmetic: Option::None, template : Option::None }
     }
     pub fn is_template(&self) -> bool {
-        self.template.is_some() && self.arithmetic.is_none()
+        self.template.is_some() && self.arithmetic.is_none() && self.tuple.is_none()
+    }
+    pub fn is_tuple(&self) -> bool {
+        self.tuple.is_some() && self.template.is_none() && self.arithmetic.is_none()
     }
     pub fn dim(&self) -> usize {
         if let Option::Some(dim) = &self.arithmetic {
@@ -54,7 +69,22 @@ impl FoldedType {
         if let (Option::Some(l_dim), Option::Some(r_dim)) = (&left.arithmetic, &right.arithmetic) {
             equal = *l_dim == *r_dim;
         }
+        if let (Option::Some((l_kind,l_tuple)), Option::Some((r_kind,r_tuple))) =
+            (&left.tuple, &right.tuple)
+        {
+            equal = *l_kind == *r_kind && Self::same_type_vec(l_tuple,r_tuple);    
+        }
         equal
+    }
+
+    pub fn same_type_vec(left: &Vec<FoldedType>, right  : &Vec<FoldedType>) -> bool {
+        let mut i = 0;
+        let mut equal = left.len() == right.len();
+        while i < left.len() && equal {
+            equal = equal && Self::same_type(&left[i],&right[i]);
+            i += 1;
+        }
+        return equal;
     }
 }
 
@@ -133,7 +163,7 @@ fn type_statement(
                 type_array_of_expressions(dimensions, program_archive, analysis_information);
             let dimensions_type = typing_response.unwrap_or_default();
             for (dim_expression, dim_type) in dimensions.iter().zip(dimensions_type) {
-                if dim_type.is_template() {
+                if dim_type.is_template() || dim_type.is_tuple() {
                     add_report(
                         ReportCode::InvalidArraySizeT,
                         dim_expression.get_meta(),
@@ -197,7 +227,16 @@ fn type_statement(
                     &mut analysis_information.reports,
                 );
             }
-
+            if var == "_" {
+                if rhe_type.is_template() {
+                    add_report(
+                        ReportCode::WrongTypesInAssignOperationExpression,
+                        meta,
+                        &mut analysis_information.reports,
+                    );
+                }
+                return;
+            }
             let symbol_type_result = apply_access_to_symbol(
                 var,
                 meta,
@@ -233,6 +272,9 @@ fn type_statement(
                     );
                 }
             }
+            let mut error_template = false; 
+            let mut error_dims = (false,0);
+            let mut error_tuple = false;
             match symbol_information {
                 SymbolInformation::Component(possible_template) =>{
                     if rhe_type.is_template(){
@@ -259,55 +301,58 @@ fn type_statement(
                             &mut analysis_information.reports,
                         )
                     }
-                }
+                },
                 SymbolInformation::Signal(dim) =>{
-                    if rhe_type.is_template(){
-                        add_report(
-                            ReportCode::WrongTypesInAssignOperationExpression,
-                            meta,
-                            &mut analysis_information.reports,
-                        )
+                    if rhe_type.is_template() {
+                        error_template = true; 
+                    } else if rhe_type.is_tuple() {
+                        error_tuple = true;
                     } else if dim != rhe_type.dim(){
-                        add_report(
-                            ReportCode::WrongTypesInAssignOperationDims(dim, rhe_type.dim()),
-                            meta,
-                            &mut analysis_information.reports,
-                        )
+                        error_dims = (true,rhe_type.dim());
                     }
                     
                 }
                 SymbolInformation::Var(dim) =>{
-                    if rhe_type.is_template(){
-                        add_report(
-                            ReportCode::WrongTypesInAssignOperationExpression,
-                            meta,
-                            &mut analysis_information.reports,
-                        )
+                    if rhe_type.is_template() {
+                        error_template = true;
+                    } else if rhe_type.is_tuple() {
+                        error_tuple = true;
                     } else if dim != rhe_type.dim(){
-                        add_report(
-                            ReportCode::WrongTypesInAssignOperationDims(dim, rhe_type.dim()), 
-                            meta,
-                            &mut analysis_information.reports,
-                        )
+                        error_dims = (true,rhe_type.dim());
                     }
                     
                 }
                 SymbolInformation::Tag =>{
-                    if rhe_type.is_template(){
-                        add_report(
-                            ReportCode::WrongTypesInAssignOperationExpression,
-                            meta,
-                            &mut analysis_information.reports,
-                        )
+                    if rhe_type.is_template() {
+                        error_template = true;
+                    } else if rhe_type.is_tuple() {
+                        error_tuple = true;
                     } else if 0 != rhe_type.dim(){
-                        add_report(
-                            ReportCode::WrongTypesInAssignOperationDims(0, rhe_type.dim()),
-                            meta,
-                            &mut analysis_information.reports,
-                        )
+                        error_dims = (true,rhe_type.dim());
                     }
                     
                 }
+            }
+            if error_template {
+                add_report(
+                    ReportCode::WrongTypesInAssignOperationExpression,
+                    meta,
+                    &mut analysis_information.reports,
+                )
+            }
+            if error_tuple {
+                add_report(
+                    ReportCode::WrongTypesInAssignOperationExpTuple,
+                    meta,
+                    &mut analysis_information.reports,
+                )
+            }
+            if error_dims.0 {
+                add_report(
+                    ReportCode::WrongTypesInAssignOperationDims(0, error_dims.1),
+                    meta,
+                    &mut analysis_information.reports,
+                )
             }
         }
         ConstraintEquality { lhe, rhe, .. } => {
@@ -323,14 +368,14 @@ fn type_statement(
             } else {
                 return;
             };
-            if lhe_type.is_template() {
+            if lhe_type.is_template() || rhe_type.is_tuple() {
                 add_report(
                     ReportCode::MustBeArithmetic,
                     lhe.get_meta(),
                     &mut analysis_information.reports,
                 );
             }
-            if rhe_type.is_template() {
+            if rhe_type.is_template() || rhe_type.is_tuple()  {
                 add_report(
                     ReportCode::MustBeArithmetic,
                     rhe.get_meta(),
@@ -354,7 +399,7 @@ fn type_statement(
                     } else {
                         return;
                     };
-                    if arg_type.is_template()  {
+                    if arg_type.is_template() || arg_type.is_tuple()  {
                         add_report(
                             ReportCode::MustBeSingleArithmeticT,
                             meta,
@@ -377,7 +422,7 @@ fn type_statement(
             } else {
                 return;
             };
-            if arg_type.is_template() {
+            if arg_type.is_template() || arg_type.is_tuple() {
                 add_report(
                     ReportCode::MustBeSingleArithmeticT,
                     meta,
@@ -400,7 +445,7 @@ fn type_statement(
                 return;
             };
             let ret_type = analysis_information.return_type.clone().unwrap();
-            debug_assert!(!value_type.is_template());
+            debug_assert!(!value_type.is_template() && !value_type.is_tuple());
             if ret_type != value_type.dim() {
                 add_report(
                     ReportCode::ExpectedDimDiffGotDim(ret_type, value_type.dim()),
@@ -420,7 +465,7 @@ fn type_statement(
             } else {
                 return;
             };
-            if cond_type.is_template(){
+            if cond_type.is_template() || cond_type.is_tuple(){
                 add_report(
                     ReportCode::MustBeSingleArithmeticT,
                     cond.get_meta(),
@@ -442,7 +487,7 @@ fn type_statement(
             } else {
                 return;
             };
-            if cond_type.is_template(){
+            if cond_type.is_template() || cond_type.is_tuple() {
                 add_report(
                     ReportCode::MustBeSingleArithmeticT,
                     cond.get_meta(),
@@ -463,7 +508,42 @@ fn type_statement(
             }
             analysis_information.environment.remove_variable_block();
         }
-        MultSubstitution { .. } => unreachable!(),
+        MultSubstitution { meta, lhe, op, rhe  } => {
+            let rhe_response = type_expression(rhe, program_archive, analysis_information);
+            let rhe_response = if let Result::Ok(f) = rhe_response {
+                f
+            } else {
+                return;
+            };
+            let lhe_response = type_expression(lhe, program_archive, analysis_information);
+            let lhe_response = if let Result::Ok(f) = lhe_response {
+                f
+            } else {
+                return;
+            };
+            let mut error;
+            if lhe_response.is_template() || rhe_response.is_template() { error = true; }
+            else{
+                if let (Option::Some((l_kind,l_tuple)), Option::Some((r_kind,r_tuple))) =
+                (&lhe_response.tuple, &rhe_response.tuple) {
+                    error = *l_kind == TupleKind::ANONYMOUSCOMP;
+                    error = error || !(*l_kind == *r_kind ||
+                                (*l_kind == TupleKind::TUPLE && *r_kind == TupleKind::ANONYMOUSCOMP));
+                    if let Expression::Tuple {values, ..} = lhe {
+                            error = error || check_types_ignoring_underscore(values,&l_tuple, &r_tuple);     
+                    } else { unreachable!(); };
+                    } else {
+                    error = !FoldedType::same_type(&lhe_response,&rhe_response);
+                }
+            }
+            if error {
+                add_report(
+    ReportCode::WrongTypesInMultiAssignOperation,
+                    meta,
+                    &mut analysis_information.reports,
+                )
+            }
+        },
         UnderscoreSubstitution { rhe , ..} => {
             let rhe_response = type_expression(rhe, program_archive, analysis_information);
             let rhe_type = if let Result::Ok(r_type) = rhe_response {
@@ -471,7 +551,7 @@ fn type_statement(
             } else {
                 return;
             };
-            if rhe_type.is_template() {
+            if rhe_type.is_template() || rhe_type.is_tuple() {
                 add_report(
                     ReportCode::MustBeArithmetic,
                     rhe.get_meta(),
@@ -480,6 +560,35 @@ fn type_statement(
             }
         },
     }
+}
+
+fn check_types_ignoring_underscore(values: &Vec<Expression>, 
+            reduced_l_tuple: &Vec<FoldedType>, 
+            reduced_r_tuple: &Vec<FoldedType>) -> bool {
+    let mut i = 0;
+    if values.len() != reduced_l_tuple.len() || values.len() != reduced_r_tuple.len() {
+        return false;
+    }
+    let mut error = false; 
+    while i < values.len() && !error {
+        if let Expression::Variable { name, .. } = &values[i] {
+            if name != "_" {
+                error = error || !FoldedType::same_type(&reduced_l_tuple[i], &reduced_r_tuple[i]);
+            }
+        } else if let Expression::Tuple { values : values2, .. } = &values[i] {
+            if let (Option::Some((l_kind,l_tuple)), Option::Some((_r_kind,r_tuple))) =
+                (&reduced_l_tuple[i].tuple, &reduced_r_tuple[i].tuple) {
+                if *l_kind != TupleKind::TUPLE { error = true; }
+                error = error || check_types_ignoring_underscore(values2, l_tuple, r_tuple);
+            } else {
+                error = true;
+            }
+        } else {
+            error = error || !FoldedType::same_type(&reduced_l_tuple[i], &reduced_r_tuple[i]); 
+        }
+        i += 1;
+    }
+    return error; 
 }
 fn type_expression(
     expression: &Expression,
@@ -501,7 +610,7 @@ fn type_expression(
             }
             let inferred_dim = values_types[0].dim();
             for (expression, value_type) in values.iter().zip(values_types.iter()) {
-                if value_type.is_template() {
+                if value_type.is_template() || value_type.is_tuple() {
                     add_report(
                         ReportCode::InvalidArrayType,
                         expression.get_meta(),
@@ -519,7 +628,7 @@ fn type_expression(
         }
         UniformArray { meta, value, dimension } => {
             let value_type = type_expression(value, program_archive, analysis_information)?;
-            if value_type.is_template() {
+            if value_type.is_template() || value_type.is_tuple() {
                 add_report(
                     ReportCode::InvalidArrayType,
                     meta,
@@ -527,7 +636,7 @@ fn type_expression(
                 );
             };
             let dim_type = type_expression(dimension, program_archive, analysis_information)?;
-            if dim_type.is_template() {
+            if dim_type.is_template() || dim_type.is_tuple() {
                 add_report(
                     ReportCode::InvalidArrayType,
                     expression.get_meta(),
@@ -549,14 +658,14 @@ fn type_expression(
             let lhe_type = lhe_response?;
             let rhe_type = rhe_response?;
             let mut successful = Result::Ok(());
-            if lhe_type.is_template() || lhe_type.dim() > 0 {
+            if lhe_type.is_template() || lhe_type.is_tuple() || lhe_type.dim() > 0 {
                 successful = add_report_and_end(
                     ReportCode::InfixOperatorWithWrongTypes,
                     lhe.get_meta(),
                     &mut analysis_information.reports,
                 );
             }
-            if rhe_type.is_template() || rhe_type.dim() > 0 {
+            if rhe_type.is_template() || rhe_type.is_tuple() || rhe_type.dim() > 0 {
                 successful = add_report_and_end(
                     ReportCode::InfixOperatorWithWrongTypes,
                     rhe.get_meta(),
@@ -568,7 +677,7 @@ fn type_expression(
         }
         PrefixOp { rhe, .. } => {
             let rhe_type = type_expression(rhe, program_archive, analysis_information)?;
-            if rhe_type.is_template() || rhe_type.dim() > 0 {
+            if rhe_type.is_template() || rhe_type.is_tuple() || rhe_type.dim() > 0 {
                 add_report_and_end(
                     ReportCode::PrefixOperatorWithWrongTypes,
                     rhe.get_meta(),
@@ -578,9 +687,9 @@ fn type_expression(
                 Result::Ok(FoldedType::arithmetic_type(0))
             }
         }
-        ParallelOp {rhe, .. } =>{
+        ParallelOp {rhe, .. } => {
             let rhe_type = type_expression(rhe, program_archive, analysis_information)?;
-            if rhe_type.is_template()  {
+            if rhe_type.is_template() || (rhe_type.is_tuple() && rhe_type.clone().tuple.unwrap().0.clone() != TupleKind::ANONYMOUSCOMP)  {
                 Result::Ok(rhe_type)
             } else {
                 add_report_and_end(
@@ -602,7 +711,7 @@ fn type_expression(
             } else {
                 return Result::Ok(if_true_type);
             };
-            if cond_type.is_template(){
+            if cond_type.is_template() || cond_type.is_tuple(){
                 add_report(
                     ReportCode::MustBeSingleArithmeticT,
                     cond.get_meta(),
@@ -632,6 +741,7 @@ fn type_expression(
             Result::Ok(if_true_type)
         }
         Variable { name, access, meta, .. } => {
+            if name == "_" { return Result::Ok(FoldedType::arithmetic_type(0))}
             debug_assert!(analysis_information.environment.has_symbol(name));
             let access_information =
                 treat_access( access, meta, program_archive, analysis_information)?;
@@ -662,64 +772,175 @@ fn type_expression(
             }
         }
         Call { id, args, meta } => {
-            analysis_information.reached.insert(id.clone());
-            let typing_response =
-                type_array_of_expressions(args, program_archive, analysis_information);
-            if program_archive.contains_template(id) && typing_response.is_err() {
-                return Result::Ok(FoldedType::template(id));
-            }
-            let arg_types = typing_response?;
-            let mut concrete_types = Vec::new();
-            let mut success = Result::Ok(());
-            for (arg_expr, arg_type) in args.iter().zip(arg_types.iter()) {
-                if arg_type.is_template() {
-                    success = add_report_and_end(
-                        ReportCode::InvalidArgumentInCall,
-                        arg_expr.get_meta(),
-                        &mut analysis_information.reports,
-                    );
-                }
-                concrete_types.push(arg_type.dim());
-            }
-            if program_archive.contains_template(id) && success.is_err() {
-                return Result::Ok(FoldedType::template(id));
-            }
-            success?;
-            let previous_file_id = analysis_information.file_id;
-            analysis_information.file_id = if program_archive.contains_function(id) {
-                program_archive.get_function_data(id).get_file_id()
-            } else {
-                program_archive.get_template_data(id).get_file_id()
-            };
-            let new_environment = prepare_environment_for_call(
-                meta,
-                id,
-                &concrete_types,
-                program_archive,
-                &mut analysis_information.reports,
-            );
-            if new_environment.is_err() {
-                return Result::Ok(FoldedType::template(id));
-            }
-            let new_environment = new_environment?;
-            let previous_environment =
-                std::mem::replace(&mut analysis_information.environment, new_environment);
-            let returned_type = if program_archive.contains_function(id) {
-                type_function(id, &concrete_types, meta, analysis_information, program_archive)
-                    .map(|val| FoldedType::arithmetic_type(val))
-            } else {
-                let r_val =
-                    type_template(id, &concrete_types, analysis_information, program_archive);
-                Result::Ok(FoldedType::template(&r_val))
-            };
-            analysis_information.environment = previous_environment;
-            analysis_information.file_id = previous_file_id;
-            let folded_value = returned_type?;
-            Result::Ok(folded_value)
+            type_check_call(analysis_information, id, args, program_archive, meta)
         }
-        _ => {unreachable!("Anonymous calls should not be reachable at this point."); }
+        AnonymousComp { meta, id, params, signals, names, .. } => {
+            type_check_anonymous_call(analysis_information, id, params, signals, names, program_archive, meta)
+        },
+        Tuple { values, ..  } => {
+            let mut typed_outputs = Vec::new();
+            for value in values{
+                let typed_exp = type_expression(value, program_archive, analysis_information)?;
+                typed_outputs.push(typed_exp)
+            }
+            if typed_outputs.len() == 1 {
+                Result::Ok(typed_outputs.get(0).unwrap().clone())
+            } else {
+                Result::Ok(FoldedType::tuple(TupleKind::TUPLE, typed_outputs))
+            }
+        
+        },
+        BusCall { .. } => todo!(),
     }
 }
+fn type_check_anonymous_call(analysis_information: &mut AnalysisInformation, id: &String, args: &Vec<Expression>, 
+            signals : &Vec<Expression>, names : &Option<Vec<(AssignOp, String)>>, 
+            program_archive: &ProgramArchive, meta: &Meta) -> Result<FoldedType, ()> {
+    analysis_information.reached.insert(id.clone());
+    let typing_response =
+        type_array_of_expressions(args, program_archive, analysis_information);
+    if program_archive.contains_template(id) && typing_response.is_err() {
+        return Result::Ok(FoldedType::template(id));
+    }
+    let arg_types = typing_response?;
+    let mut concrete_types = Vec::new();
+    let mut success = Result::Ok(());
+    for (arg_expr, arg_type) in args.iter().zip(arg_types.iter()) {
+        if arg_type.is_template() || arg_type.is_tuple() {
+            success = add_report_and_end(
+                ReportCode::InvalidArgumentInCall,
+                arg_expr.get_meta(),
+                &mut analysis_information.reports,
+            );
+        }
+        concrete_types.push(arg_type.dim());
+    }
+    if program_archive.contains_template(id) && success.is_err() {
+        return Result::Ok(FoldedType::template(id));
+    }
+    success?;
+    let typing_response =
+        type_array_of_expressions(signals, program_archive, analysis_information);
+    if program_archive.contains_template(id) && typing_response.is_err() {
+        return Result::Ok(FoldedType::template(id));
+    }
+    let signal_types = typing_response?;
+    let mut concrete_signal_types = Vec::new();
+    let mut success = Result::Ok(());
+    for (signal_expr, signal_type) in signals.iter().zip(signal_types.iter()) {
+        if signal_type.is_template() {
+            success = add_report_and_end(
+                ReportCode::InvalidArgumentInCall,
+                signal_expr.get_meta(),
+                &mut analysis_information.reports,
+            );
+        }
+        concrete_signal_types.push(signal_type.dim());
+    }
+    if program_archive.contains_template(id) && success.is_err() {
+        return Result::Ok(FoldedType::template(id));
+    }
+    success?;
+    let template = program_archive.get_template_data(id);
+    if let Some(m) = names { // in case we have a list of names and assignments
+        let inputs = template.get_inputs();
+        for (_, name) in m{
+            if !inputs.contains_key(name){
+                add_report(
+                    ReportCode::NonExistentSymbol,
+                    meta,
+                    &mut analysis_information.reports,
+                );            }
+        }        
+    }
+    let previous_file_id = analysis_information.file_id;
+    analysis_information.file_id = program_archive.get_template_data(id).get_file_id();
+    let new_environment = prepare_environment_for_call(
+        &meta,
+        id,
+        &concrete_types,
+        program_archive,
+        &mut analysis_information.reports,
+    );
+    if new_environment.is_err() {
+        return Result::Ok(FoldedType::template(id));
+    }
+    let new_environment = new_environment?;
+    let previous_environment =
+        std::mem::replace(&mut analysis_information.environment, new_environment);
+    let _r_val = type_template(id, &concrete_types, analysis_information, program_archive);
+    analysis_information.environment = previous_environment;
+    analysis_information.file_id = previous_file_id;
+
+    let mut typed_outputs = Vec::new();
+    for (_name,dim) in template.get_declaration_outputs(){
+        typed_outputs.push(FoldedType::arithmetic_type(*dim))
+    }
+    if typed_outputs.len() == 1 {
+        Result::Ok(typed_outputs.get(0).unwrap().clone())
+    } else {
+        Result::Ok(FoldedType::tuple(TupleKind::ANONYMOUSCOMP, typed_outputs))
+    }
+}
+
+
+fn type_check_call(analysis_information: &mut AnalysisInformation, id: &String, args: &Vec<Expression>, program_archive: &ProgramArchive, meta: &Meta) -> Result<FoldedType, ()> {
+    analysis_information.reached.insert(id.clone());
+    let typing_response =
+        type_array_of_expressions(args, program_archive, analysis_information);
+    if program_archive.contains_template(id) && typing_response.is_err() {
+        return Result::Ok(FoldedType::template(id));
+    }
+    let arg_types = typing_response?;
+    let mut concrete_types = Vec::new();
+    let mut success = Result::Ok(());
+    for (arg_expr, arg_type) in args.iter().zip(arg_types.iter()) {
+        if arg_type.is_template() || arg_type.is_tuple() {
+            success = add_report_and_end(
+                ReportCode::InvalidArgumentInCall,
+                arg_expr.get_meta(),
+                &mut analysis_information.reports,
+            );
+        }
+        concrete_types.push(arg_type.dim());
+    }
+    if program_archive.contains_template(id) && success.is_err() {
+        return Result::Ok(FoldedType::template(id));
+    }
+    success?;
+    let previous_file_id = analysis_information.file_id;
+    analysis_information.file_id = if program_archive.contains_function(id) {
+        program_archive.get_function_data(id).get_file_id()
+    } else {
+        program_archive.get_template_data(id).get_file_id()
+    };
+    let new_environment = prepare_environment_for_call(
+        meta,
+        id,
+        &concrete_types,
+        program_archive,
+        &mut analysis_information.reports,
+    );
+    if new_environment.is_err() {
+        return Result::Ok(FoldedType::template(id));
+    }
+    let new_environment = new_environment?;
+    let previous_environment =
+        std::mem::replace(&mut analysis_information.environment, new_environment);
+    let returned_type = if program_archive.contains_function(id) {
+        type_function(id, &concrete_types, meta, analysis_information, program_archive)
+            .map(|val| FoldedType::arithmetic_type(val))
+    } else {
+        let r_val =
+            type_template(id, &concrete_types, analysis_information, program_archive);
+        Result::Ok(FoldedType::template(&r_val))
+    };
+    analysis_information.environment = previous_environment;
+    analysis_information.file_id = previous_file_id;
+    let folded_value = returned_type?;
+    Result::Ok(folded_value)
+}
+
 //************************************************* Statement support *************************************************
 fn treat_sequence_of_statements(
     stmts: &[Statement],
@@ -762,7 +983,7 @@ fn treat_access(
                         access_info.0 += 1;
                     }
                     if let Result::Ok(index_type) = index_response {
-                        if index_type.is_template() {
+                        if index_type.is_template() || index_type.is_tuple() {
                             add_report(
                                 ReportCode::InvalidArraySizeT,
                                 index.get_meta(),
@@ -814,6 +1035,7 @@ fn apply_access_to_symbol(
     reports: &mut ReportCollection,
     program_archive: &ProgramArchive,
 ) -> Result<SymbolInformation, ()> {
+    if symbol == "_" { return Result::Ok(SymbolInformation::Signal(0))}
     let (current_template, mut current_dim, possible_tags) = if environment.has_component(symbol) {
         let (temp, dim) = environment.get_component_or_break(symbol, file!(), line!()).clone();
         (temp,dim, Vec::new())
@@ -1044,9 +1266,11 @@ fn add_report(error_code: ReportCode, meta: &Meta, reports: &mut ReportCollectio
         WrongTypesInAssignOperationOperatorNoSignal => {
             format!("The operator does not match the types of the assigned elements.\n Only assignments to signals allow the operators <== and <--, try using = instead")
         }
+        WrongTypesInMultiAssignOperation => "Assignee and assigned types do not match.\n Types of left-side and right-side do not match.".to_string(),
         WrongTypesInAssignOperationArrayTemplates => "Assignee and assigned types do not match.\n All components of an array must be instances of the same template.".to_string(),
         WrongTypesInAssignOperationTemplate => "Assignee and assigned types do not match.\n Expected template found expression.".to_string(),
         WrongTypesInAssignOperationExpression => "Assignee and assigned types do not match.\n Expected expression found template.".to_string(),
+        WrongTypesInAssignOperationExpTuple => "Assignee and assigned types do not match.\n Expected expression found tuple.".to_string(),
         WrongTypesInAssignOperationDims(expected, found) => {
             format!("Assignee and assigned types do not match. \n Expected dimensions: {}, found {}",
             expected, found)

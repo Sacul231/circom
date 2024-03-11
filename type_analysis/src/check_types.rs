@@ -1,3 +1,5 @@
+use self::transformation_anon_tuples::apply_syntactic_sugar;
+
 use super::analyzers::*;
 use super::decorators::*;
 use program_structure::error_definition::ReportCollection;
@@ -25,17 +27,6 @@ pub fn check_types(
         return Result::Err(errors);
     }
 
-    // Decorators
-    template_level_decorators(program_archive, &mut errors);
-    if !errors.is_empty() {
-        return Result::Err(errors);
-    }
-
-    function_level_decorators(program_archive, &mut errors);
-    if !errors.is_empty() {
-        return Result::Err(errors);
-    }
-
     // Type analysis
     let typing_result = type_check(program_archive);
     match typing_result {
@@ -57,8 +48,25 @@ pub fn check_types(
         }
     }
 
+    //Removing anonymous components and tuples
+    let sugar_result = apply_syntactic_sugar(program_archive);
+    if let Result::Err(v) = sugar_result {
+        errors.push(v);
+        return Result::Err(errors);
+    };
+
     // Semantics analyses
     semantic_analyses(program_archive, &mut errors, &mut warnings);
+    if !errors.is_empty() {
+        return Result::Err(errors);
+    }
+    // Decorators
+    template_level_decorators(program_archive, &mut errors);
+    if !errors.is_empty() {
+        return Result::Err(errors);
+    }
+
+    function_level_decorators(program_archive, &mut errors);
 
     if !errors.is_empty() {
         Result::Err(errors)

@@ -22,8 +22,10 @@ pub enum ReportCode {
     WrongTypesInAssignOperationOperatorNoSignal,
     WrongTypesInAssignOperationTemplate,
     WrongTypesInAssignOperationExpression,
+    WrongTypesInAssignOperationExpTuple,
     WrongTypesInAssignOperationArrayTemplates,
     WrongTypesInAssignOperationDims(usize, usize),
+    WrongTypesInMultiAssignOperation,
     WrongNumberOfArguments(usize, usize),
     UndefinedFunction,
     UndefinedTemplate,
@@ -106,6 +108,7 @@ pub enum ReportCode {
     TupleError,
     InvalidSignalTagAccess,
     UninitializedComponent,
+    InvalidUnderscore,
 }
 
 impl fmt::Display for ReportCode {
@@ -121,6 +124,7 @@ impl fmt::Display for ReportCode {
             WrongTypesInAssignOperationArrayTemplates => "T2000",
             WrongTypesInAssignOperationTemplate => "T2000",
             WrongTypesInAssignOperationExpression => "T2000",
+            WrongTypesInAssignOperationExpTuple => "T2000",
             WrongTypesInAssignOperationDims(..) => "T2000",
             UnclosedComment => "P1005",
             FileOs  => "P1006",
@@ -213,6 +217,8 @@ impl fmt::Display for ReportCode {
             AnonymousCompError => "TAC01",
             TupleError => "TAC02",
             UnderscoreWithNoSignalWarning => "TAC03",
+            WrongTypesInMultiAssignOperation => "TAC04",
+            InvalidUnderscore => "TAC05",
         };
         f.write_str(string_format)
     }

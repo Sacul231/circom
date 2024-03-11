@@ -27,7 +27,6 @@ fn analyse_statement(
     use Statement::*;
     let file_id = stmt.get_meta().get_file_id();
     match stmt {
-        MultSubstitution { .. } => unreachable!(),
         IfThenElse { cond, if_case, else_case, .. } => {
             analyse_expression(cond, function_names, reports);
             analyse_statement(if_case, function_names, reports);
@@ -75,6 +74,20 @@ fn analyse_statement(
                 report.add_primary(location, file_id, "Declaring template element".to_string());
                 reports.push(report);
             }
+        }
+        MultSubstitution { meta, lhe, op, rhe } => {
+            if op.is_signal_operator() {
+                let mut report = Report::error(
+                    "Function uses template operators".to_string(),
+                    ReportCode::UndefinedFunction,
+                );
+                let location =
+                    file_definition::generate_file_location(meta.get_start(), meta.get_end());
+                report.add_primary(location, file_id, "Template operator found".to_string());
+                reports.push(report);
+            }
+            analyse_expression(rhe, function_names, reports);
+            analyse_expression(lhe, function_names, reports);
         }
         Substitution { meta, op, access, rhe, .. } => {
             if op.is_signal_operator() {

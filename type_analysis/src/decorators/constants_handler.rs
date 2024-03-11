@@ -143,7 +143,6 @@ fn statement_invariant_check(stmt: &Statement, environment: &mut Constants) -> R
         }
         While { stmt, .. } => while_invariant_check(stmt, environment),
         Block { stmts, .. } => block_invariant_check(stmts, environment),
-        MultSubstitution { .. } => unreachable!(),
         _ => ReportCollection::new(),
     }
 }
@@ -297,9 +296,14 @@ fn expand_statement(stmt: &mut Statement, environment: &mut ExpressionHolder) {
         LogCall { args, .. } => expand_log_call(args, environment),
         Assert { arg, .. } => expand_assert(arg, environment),
         Block { stmts, .. } => expand_block(stmts, environment),
-        MultSubstitution { .. } => unreachable!(),
+        MultSubstitution { lhe, rhe , .. } => expand_multsubstitution(lhe, rhe, environment),
         UnderscoreSubstitution { rhe, .. } => expand_underscore_substitution(rhe, environment),
     }
+}
+
+fn expand_multsubstitution(lhe: &mut Expression, rhe: &mut Expression, environment: &mut program_structure::environment::RawEnvironment<program_structure::environment::OnlyVars, (), (), Expression>) {
+    *lhe = expand_expression(lhe.clone(), environment);
+    *rhe = expand_expression(rhe.clone(), environment);    
 }
 
 fn expand_if_then_else(

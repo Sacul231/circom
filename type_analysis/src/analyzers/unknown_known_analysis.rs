@@ -321,6 +321,9 @@ fn analyze(stmt: &Statement, entry_information: EntryInformation) -> ExitInforma
             tags_modified = tags;
             signals_declared = ns;
         }
+        MultSubstitution { .. } => {
+            unreachable!();
+        },
         _ => {}
     }
     ExitInformation { 
@@ -382,7 +385,8 @@ fn tag(expression: &Expression, environment: &Environment) -> Tag {
         }
         PrefixOp { rhe, .. } => tag(rhe, environment),
         ParallelOp { rhe, .. } => tag(rhe, environment),
-        _ => {unreachable!("Anonymous calls should not be reachable at this point."); }
+        BusCall { .. } => todo!(),
+        AnonymousComp {..} | Tuple {..} => { unreachable!("Anonymous calls should not be reachable at this point.") },
     }
 }
 // ***************************** Compare two variable states ********************
@@ -510,8 +514,9 @@ fn unknown_index(exp: &Expression, environment: &Environment) -> bool {
             (false, bucket)
         }
         UniformArray{ value, dimension, .. } => (false, vec![value.as_ref(), dimension.as_ref()]),
-        _ => {unreachable!("Anonymous calls should not be reachable at this point."); }
-    };
+        BusCall { .. } => todo!(),
+        AnonymousComp {..} | Tuple {..} => { unreachable!("Anonymous calls should not be reachable at this point.");},
+     };
     let mut has_unknown_index = init;
     let mut index = 0;
     loop {

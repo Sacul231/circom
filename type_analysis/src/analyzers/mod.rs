@@ -17,3 +17,4 @@ pub mod type_check;
 pub mod type_given_function;
 pub mod type_register;
 pub mod unknown_known_analysis;
+pub mod transformation_anon_tuples;
