@@ -4,6 +4,7 @@ pub struct Input {
     pub input_program: PathBuf,
     pub out_r1cs: PathBuf,
     pub out_json_constraints: PathBuf,
+    pub out_maple_constraints: PathBuf,
     pub out_json_substitutions: PathBuf,
     pub out_wat_code: PathBuf,
     pub out_wasm_code: PathBuf,
@@ -21,6 +22,7 @@ pub struct Input {
     pub r1cs_flag: bool,
     pub sym_flag: bool,
     pub json_constraint_flag: bool,
+    pub maple_constraint_flag: bool,
     pub json_substitution_flag: bool,
     pub main_inputs_flag: bool,
     pub print_ir_flag: bool,
@@ -44,6 +46,8 @@ const JS: &'static str = "js";
 const DAT: &'static str = "dat";
 const SYM: &'static str = "sym";
 const JSON: &'static str = "json";
+const MAPLE: &'static str = "maple";
+
 
 
 impl Input {
@@ -83,6 +87,11 @@ impl Input {
                 &format!("{}_constraints", file_name),
                 JSON,
             ),
+            out_maple_constraints: Input::build_output(
+                &output_path,
+                &format!("{}_constraints", file_name),
+                MAPLE,
+            ),
             out_json_substitutions: Input::build_output(
                 &output_path,
                 &format!("{}_substitutions", file_name),
@@ -95,6 +104,7 @@ impl Input {
             sym_flag: input_processing::get_sym(&matches),
             main_inputs_flag: input_processing::get_main_inputs_log(&matches),
             json_constraint_flag: input_processing::get_json_constraints(&matches),
+            maple_constraint_flag: input_processing::get_maple_constraints(&matches),
             json_substitution_flag: input_processing::get_json_substitutions(&matches),
             print_ir_flag: input_processing::get_ir(&matches),
             no_rounds: if let SimplificationStyle::O2(r) = o_style { r } else { 0 },
@@ -164,6 +174,9 @@ impl Input {
     pub fn json_constraints_file(&self) -> &str {
         self.out_json_constraints.to_str().unwrap()
     }
+    pub fn maple_constraints_file(&self) -> &str {
+        self.out_maple_constraints.to_str().unwrap()
+    }
     pub fn json_substitutions_file(&self) -> &str {
         self.out_json_substitutions.to_str().unwrap()
     }
@@ -184,6 +197,9 @@ impl Input {
     }
     pub fn json_constraints_flag(&self) -> bool {
         self.json_constraint_flag
+    }
+    pub fn maple_constraints_flag(&self) -> bool {
+        self.maple_constraint_flag
     }
     pub fn json_substitutions_flag(&self) -> bool {
         self.json_substitution_flag
@@ -271,6 +287,10 @@ mod input_processing {
 
     pub fn get_json_constraints(matches: &ArgMatches) -> bool {
         matches.is_present("print_json_c")
+    }
+
+    pub fn get_maple_constraints(matches: &ArgMatches) -> bool {
+        matches.is_present("print_maple_c")
     }
 
     pub fn get_json_substitutions(matches: &ArgMatches) -> bool {
@@ -402,6 +422,13 @@ mod input_processing {
                     .takes_value(false)
                     .display_order(120)
                     .help("Outputs the constraints in json format"),
+            )
+            .arg(
+                Arg::with_name("print_maple_c")
+                    .long("plain")
+                    .takes_value(false)
+                    .display_order(120)
+                    .help("Outputs the constraints in plain format"),
             )
             .arg(
                 Arg::with_name("print_ir")

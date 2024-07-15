@@ -1,5 +1,6 @@
 mod constraint_correctness_analysis;
 mod json_porting;
+mod maple_porting;
 mod map_to_constraint_list;
 mod r1cs_porting;
 mod sym_porting;
@@ -310,6 +311,10 @@ impl ConstraintExporter for DAG {
         DAG::generate_json_constraints(self, writer)
     }
 
+    fn maple_constraints(&self, writer: &DebugWriter) -> Result<(), ()> {
+        DAG::generate_maple_constraints(self, writer)
+    }
+
     fn sym(&self, out: &str) -> Result<(), ()> {
         DAG::generate_sym_output(self, out)
     }
@@ -488,6 +493,10 @@ impl DAG {
 
     pub fn generate_json_constraints(&self, debug: &DebugWriter) -> Result<(), ()> {
         json_porting::port_constraints(self, debug)
+    }
+
+    pub fn generate_maple_constraints(&self, debug: &DebugWriter) -> Result<(), ()> {
+        maple_porting::port_constraints(self, debug)
     }
 
     pub fn produce_witness(&self) -> Vec<usize> {

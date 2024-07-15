@@ -37,11 +37,13 @@ fn start() -> Result<(), ()> {
         inspect_constraints_flag: user_input.inspect_constraints_flag(),
         r1cs_flag: user_input.r1cs_flag(),
         json_constraint_flag: user_input.json_constraints_flag(),
+        maple_constraint_flag: user_input.maple_constraints_flag(),
         json_substitution_flag: user_input.json_substitutions_flag(),
         sym_flag: user_input.sym_flag(),
         sym: user_input.sym_file().to_string(),
         r1cs: user_input.r1cs_file().to_string(),
         json_constraints: user_input.json_constraints_file().to_string(),
+        maple_constraints: user_input.maple_constraints_file().to_string(),
         json_substitutions: user_input.json_substitutions_file().to_string(),
         prime: user_input.prime(),        
     };

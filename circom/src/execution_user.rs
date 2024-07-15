@@ -9,6 +9,7 @@ pub struct ExecutionConfig {
     pub r1cs: String,
     pub sym: String,
     pub json_constraints: String,
+    pub maple_constraints: String,
     pub json_substitutions: String,
     pub no_rounds: usize,
     pub flag_s: bool,
@@ -21,6 +22,7 @@ pub struct ExecutionConfig {
     pub r1cs_flag: bool,
     pub json_substitution_flag: bool,
     pub json_constraint_flag: bool,
+    pub maple_constraint_flag: bool,
     pub prime: String,
 }
 
@@ -29,7 +31,8 @@ pub fn execute_project(
     config: ExecutionConfig,
 ) -> Result<VCP, ()> {
     use constraint_generation::{build_circuit, BuildConfig};
-    let debug = DebugWriter::new(config.json_constraints).unwrap();
+    let debug = DebugWriter::new(config.json_constraints, config.maple_constraints).unwrap();
+
     let build_config = BuildConfig {
         no_rounds: config.no_rounds,
         flag_json_sub: config.json_substitution_flag,
@@ -52,6 +55,9 @@ pub fn execute_project(
     }
     if config.json_constraint_flag {
         generate_json_constraints(&debug, exporter.as_ref())?;
+    }
+    if config.maple_constraint_flag {
+        generate_maple_constraints(&debug, exporter.as_ref())?;
     }
     Result::Ok(vcp)
 }
@@ -82,6 +88,19 @@ fn generate_json_constraints(
 ) -> Result<(), ()> {
     if let Ok(()) = exporter.json_constraints(&debug) {
         println!("{} {}", Colour::Green.paint("Constraints written in:"), debug.json_constraints);
+        Result::Ok(())
+    } else {
+        eprintln!("{}", Colour::Red.paint("Could not write the output in the given path"));
+        Result::Err(())
+    }
+}
+
+fn generate_maple_constraints(
+    debug: &DebugWriter,
+    exporter: &dyn ConstraintExporter,
+) -> Result<(), ()> {
+    if let Ok(()) = exporter.maple_constraints(&debug) {
+        println!("{} {}", Colour::Green.paint("Constraints written in:"), debug.maple_constraints);
         Result::Ok(())
     } else {
         eprintln!("{}", Colour::Red.paint("Could not write the output in the given path"));
